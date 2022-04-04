@@ -16,5 +16,10 @@ with pdfplumber.open(filename) as pdf:
         x = text.find("Table of Content")
         if x != -1:
             print(text)
+
+        x = text.find("Table of")
+        if x != -1:
+            print(text)
+            exit()
         
-        print(i)
+        #print(i)
