@@ -9,6 +9,7 @@ import sys
 import glob
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
+
 path = '/Users/kongdej/Projects/contract/documents/'
 meiliSERVER="http://127.0.0.1:7700"
 uri = "mongodb://localhost:27017/"
@@ -23,17 +24,20 @@ client = meilisearch.Client(meiliSERVER, APIKEY)
 myclient = pymongo.MongoClient(uri)
 mydb = myclient["contracts"]
 
+
 # required file csv argument
 file = 'BPRP1/BPRP1-2-2'    
 file_csv = file +'.csv'
 file_pdf = file +'.pdf'
 project = file.split('/')[0]
-volume = file_csv.split('-')[1]
-book = file_csv.split('-')[2].split('.')[0]
+volume = file.split('-')[1]
+book = file.split('-')[2]
 id = 0
 part = ''
 section = ''
 section_i = ''
+
+#print (file,project,volume,book)
 
 # meilisearch: delete all project
 print('delete ' + project)
@@ -48,6 +52,7 @@ if not isExist:
 else:
     print(path," already exists.")
 
+
 files = glob.glob(path + '/*.pdf')
 
 # delete all pdf files
@@ -61,7 +66,8 @@ for f in files:
 # mongodb: create collection
 print ('create collection', project)
 mycol = mydb[project]
-#mycol.drop()
+mycol.drop()
+
 
 collist = mydb.list_collection_names()
 if project in collist:
@@ -75,6 +81,7 @@ if project in collist:
     
     print(x.deleted_count, " documents deleted.")
 
+
  # build toc from csv file
 toc = []
 b = 0
@@ -82,6 +89,7 @@ with open(file_csv) as infile:
     reader = csv.reader(infile) 
     for row in reader:
         #print(row)
+        
         if len(row[0]) > 0:   
 
             # get part or section 
@@ -101,6 +109,7 @@ with open(file_csv) as infile:
                 page=ts[-1]
                 s_page = row[1]
                 n_page = row[2]
+                #print (title,s_page,n_page)
 
                 filename = volume + '-' + book + ' ' + title.replace('/','-') + '.pdf'
                 toc.append({
@@ -122,52 +131,59 @@ with open(file_csv) as infile:
 
                 id += 1
 
+    #print(toc[2])
+
+
 # extract text from pdf
 with pdfplumber.open(file_pdf) as pdf:
     inputpdf = PdfFileReader(open(file_pdf, "rb"), strict = False)
     i = 0        
     for item in range(len(toc)):
-        print (toc[item]['s_page'], toc[item]['n_page'] )
-        #print ("======")
-        
-        out_text = ''
-        out_pdf = PdfFileWriter()
-        for n in range(int(toc[item]['n_page'])):
-            ####################################################################################
-            out_text += pdf.pages[int(toc[item]['s_page']) + n - 1].extract_text(x_tolerance=1)    
-            out_pdf.addPage(inputpdf.getPage(int(toc[item]['s_page']) + n - 1))  
-            ####################################################################################
+        if toc[item]['s_page'] != '':
+            #print (toc[item]['s_page'], toc[item]['n_page'] )
+            #print ("======")
+            
+            out_text = ''
+            out_pdf = PdfFileWriter()
+            for n in range(int(toc[item]['n_page'])):
+                ####################################################################################
+                out_text += pdf.pages[int(toc[item]['s_page']) + n - 1].extract_text(x_tolerance=1)    
+                out_pdf.addPage(inputpdf.getPage(int(toc[item]['s_page']) + n - 1))  
+                ####################################################################################
 
-        filepdf = path+'/'+toc[item]['file']
-        with open(filepdf, "wb") as outputStream:
-            out_pdf.write(outputStream)
+            filepdf = path+'/'+toc[item]['file']
+            with open(filepdf, "wb") as outputStream:
+                out_pdf.write(outputStream)
+            
+            #clean out_text
+            print('-------------------------')
+            found = False
+            texts = ''
+            for line in out_text.split('\n'):
+                for t in line.split(' '):
+                    if toc[item]['section'].strip() == t.strip():
+                        found = True
+                    if i < len(toc) - 1:
+                        if toc[item + 1]['section'].strip() == t.strip():
+                            found = False
+                if found:
+                    texts += line
+                    print (line)
+            print('-------------------------')
 
-        #clean out_text
-        print('-------------------------')
-        found = False
-        texts = ''
-        for line in out_text.split('\n'):
-            for t in line.split(' '):
-                if toc[item]['section'].strip() == t.strip():
-                    found = True
-                if i < len(toc) - 1:
-                    if toc[item + 1]['section'].strip() == t.strip():
-                        found = False
-            if found:
-                texts += line
-                print (line)
-        print('-------------------------')
+            out_text = texts
+            
+            words = [word for word in out_text.split() if word.lower() not in ENGLISH_STOP_WORDS]
+            out_text = " ".join(words)
 
-        out_text = texts
-        
-        words = [word for word in out_text.split() if word.lower() not in ENGLISH_STOP_WORDS]
-        out_text = " ".join(words)
+            toc[item]['text'] = out_text.lower()
 
-        toc[item]['text'] = out_text.lower()
-        client.index(project).add_documents([toc[item]]) # meilisearch
 
-        x = mycol.insert_one(toc[item]) # mongodb
-        
-        
-        #print (i,toc[item],x)  
-        i += 1
+
+            client.index(project).add_documents([toc[item]]) # meilisearch
+
+            x = mycol.insert_one(toc[item]) # mongodb
+            
+            
+            #print (i,toc[item],x)  
+            i += 1

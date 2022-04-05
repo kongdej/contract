@@ -20,6 +20,9 @@ with pdfplumber.open(filename) as pdf:
         x = text.find("Table of")
         if x != -1:
             print(text)
-            exit()
+
+        x = text.find("TABLE OF")
+        if x != -1:
+            print(text) 
         
-        #print(i)
+        print(i)
